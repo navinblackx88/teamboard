@@ -1,0 +1,74 @@
+# Full stack: docker compose up --build
+#   App        http://localhost:5173
+#   API docs   http://localhost:4000/api/docs
+#   Mail inbox http://localhost:8025   (Mailpit catches every email)
+#   MinIO      http://localhost:9001   (minio / minio12345)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: pm, POSTGRES_PASSWORD: pm, POSTGRES_DB: pm }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U pm"], interval: 5s, retries: 10 }
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 10 }
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: minio12345 }
+    volumes: [miniodata:/data]
+    ports: ["9000:9000", "9001:9001"]
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      sh -c "until mc alias set local http://minio:9000 minio minio12345; do sleep 1; done;
+             mc mb -p local/teamboard-attachments; exit 0"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["8025:8025", "1025:1025"]
+
+  api:
+    build: ./backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_URL: http://localhost:5173
+      API_URL: http://localhost:4000
+      DATABASE_URL: postgres://pm:pm@postgres:5432/pm
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me-access-secret-please}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-secret-please}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      STORAGE_DRIVER: s3
+      S3_BUCKET: teamboard-attachments
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ACCESS_KEY_ID: minio
+      S3_SECRET_ACCESS_KEY: minio12345
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    ports: ["4000:4000"]
+
+  web:
+    build:
+      context: ./frontend
+      args: { VITE_API_URL: http://localhost:4000 }
+    depends_on: [api]
+    ports: ["5173:80"]
+
+volumes:
+  pgdata:
+  miniodata:
