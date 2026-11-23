@@ -16,7 +16,7 @@ The repo already contains everything Railway reads:
 | File | Purpose |
 |---|---|
 | `railway.json` | Build with `Dockerfile`, health check on `/health`, restart on failure |
-| `Dockerfile` | Builds API + frontend into one image; runs as the unprivileged `node` user |
+| `Dockerfile` | Builds API + frontend into one Debian-slim image; runs as the unprivileged `node` user |
 | `railway/start.sh` | Makes the volume writable, seeds demo data once (optional), starts the API (migrations run on start) |
 
 ## 1. Create the project
@@ -81,6 +81,7 @@ The volume ties the service to **one replica**, which is plenty for an MVP. To r
 |---|---|
 | `Set JWT_… in production` | Add the JWT variables from step 2 |
 | `ECONNREFUSED` / `getaddrinfo` for the database | `DATABASE_URL` missing or not `${{Postgres.DATABASE_URL}}` |
+| `getaddrinfo ENOTFOUND postgres.railway.internal` | The image is Debian-based to avoid Railway's Alpine DNS issue, and the app retries the database for about 60 s at startup. If it persists, check that Postgres is in the same project and environment, and that `DATABASE_URL` is a reference to it |
 | Health check times out on first deploy | Check the logs. Migrations and the seed run before the server listens; the timeout is 180 s |
 | `EACCES` writing uploads | Volume not mounted at `/data`, or `LOCAL_UPLOAD_DIR` overridden |
 | Login works but links in emails point to the wrong host | Custom domain: set `APP_URL` / `API_URL` |
