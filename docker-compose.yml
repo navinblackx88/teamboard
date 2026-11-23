@@ -1,0 +1,51 @@
+# TeamBoard: local MVP demo, no cloud services needed.
+#
+#   docker compose up --build        then open http://localhost:8080
+#
+#   App + API      http://localhost:8080          (nginx serves the app and proxies /api and /socket.io)
+#   API docs       http://localhost:8080/api/docs
+#   Email inbox    http://localhost:8025          (Mailpit shows every notification email)
+#   Demo logins    aisha@acme.dev (admin) · marco@acme.dev (PM) · priya@acme.dev (dev) · sam@acme.dev (viewer)
+#                  password: password123
+#
+#   Reset all data: docker compose down -v
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: pm, POSTGRES_PASSWORD: pm, POSTGRES_DB: pm }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U pm"], interval: 3s, retries: 20 }
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["8025:8025"]
+
+  api:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      APP_URL: http://localhost:8080
+      API_URL: http://localhost:8080
+      DATABASE_URL: postgres://pm:pm@postgres:5432/pm
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-demo-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-demo-refresh-secret-change-me}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}    # false = start with an empty install
+      STORAGE_DRIVER: local                      # attachments on the `uploads` volume
+      LOCAL_UPLOAD_DIR: /app/backend/uploads
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    volumes: [uploads:/app/backend/uploads]
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    depends_on:
+      api: { condition: service_healthy }
+    ports: ["8080:80"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
