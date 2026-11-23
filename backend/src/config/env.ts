@@ -63,8 +63,9 @@ if (!parsed.success) {
 }
 export const env = parsed.data;
 
-if (env.NODE_ENV === "production" && env.JWT_ACCESS_SECRET.startsWith("dev-")) {
-  throw new Error("Set JWT_ACCESS_SECRET / JWT_REFRESH_SECRET in production");
+if (env.NODE_ENV === "production") {
+  const missing = (["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const).filter((k) => env[k].startsWith("dev-"));
+  if (missing.length) throw new Error(`Set ${missing.join(" and ")} in production (Vercel: Project → Settings → Environment Variables, then redeploy). Generate one with: openssl rand -base64 48`);
 }
 /** True inside a Vercel Function (or any serverless host that sets SERVERLESS=1): no long-lived process. */
 export const serverless = process.env.VERCEL === "1" || process.env.SERVERLESS === "1";
