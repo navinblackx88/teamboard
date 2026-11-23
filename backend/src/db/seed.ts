@@ -6,6 +6,7 @@
  */
 import bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
+import { redis } from "../lib/redis.js";
 import { db, pool } from "./index.js";
 import { runMigrations } from "./migrate.js";
 import {
@@ -41,7 +42,7 @@ async function main() {
     ["Sam Ortiz", "sam@acme.dev", "viewer"],
   ];
   const u = await db.insert(users).values(people.map(([name, email]) => ({
-    name, email, passwordHash: hash, emailNotifications: false,
+    name, email, passwordHash: hash, emailNotifications: true, // demo emails land in Mailpit (http://localhost:8025)
     avatarUrl: null,
   }))).returning();
   const [aisha, marco, priya, tom, lena] = u;
@@ -160,4 +161,7 @@ async function main() {
   console.log(`Seeded workspace "${ws.name}". Sign in as aisha@acme.dev (admin), marco@acme.dev (PM), priya@acme.dev (developer) or sam@acme.dev (viewer); password: password123`);
 }
 
-main().then(() => pool.end()).catch((e) => { console.error(e); process.exit(1); });
+// Close every connection (Redis included) and exit, so `seed && start` sequences continue.
+main()
+  .then(async () => { await pool.end(); redis?.disconnect(); process.exit(0); })
+  .catch((e) => { console.error(e); process.exit(1); });

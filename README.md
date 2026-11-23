@@ -11,17 +11,16 @@ teamboard/
 │   ├── src/modules/      auth · workspaces · projects · tasks · sprints · comments · files · notifications · activity · dashboard
 │   └── tests/            integration tests against real Postgres + Redis
 ├── frontend/    React 19 · TypeScript · shadcn/ui (Radix) · Tailwind CSS 4 · React Query · Zustand · React DnD · Recharts · Socket.IO client
-└── docker-compose.yml    Postgres, Redis, MinIO (S3), Mailpit, API, web
+└── docker-compose.yml    Local demo stack: Postgres, API, web (nginx), Mailpit
 ```
 
 ## Quick start
 
-**With Docker** (everything included):
+**With Docker** (recommended for a local demo; no cloud services needed):
 ```bash
 docker compose up --build
-docker compose exec api node dist/db/seed.js     # optional demo data
 ```
-App at http://localhost:5173 · API docs at http://localhost:4000/api/docs · email inbox at http://localhost:8025 · MinIO console at http://localhost:9001
+Open **http://localhost:8080** and sign in as `marco@acme.dev` / `password123`. Demo data is created on first start. API docs are at http://localhost:8080/api/docs, and every email the app sends appears in Mailpit at http://localhost:8025. Reset with `docker compose down -v`. See **[LOCAL-DEMO.md](LOCAL-DEMO.md)** for the architecture and a 10-minute demo script.
 
 **Without Docker** (you need Postgres 16 and, optionally, Redis 7):
 ```bash
@@ -95,7 +94,7 @@ The frontend is built on [shadcn/ui](https://ui.shadcn.com) (new-york style, Rad
   never cause skipped or duplicated rows.
 - **Caching.** Dashboard keys embed a per-workspace version counter that every activity entry increments,
   so the cache is invalidated in O(1) with no key scans.
-- **Files.** `STORAGE_DRIVER=s3` works with AWS S3, MinIO, and Google Cloud Storage (its S3-interoperable API with HMAC keys).
+- **Files.** `STORAGE_DRIVER=s3` works with AWS S3, Cloudflare R2, Google Cloud Storage and other S3-compatible stores (its S3-interoperable API with HMAC keys).
   Downloads use short-lived presigned URLs. `local` stores files on disk and serves them via signed 5-minute links.
 - **Auth.** 15-minute JWT access tokens; opaque refresh tokens stored only as hashes and rotated on every use
   (reuse is rejected). Google tokens are handed to the SPA in the URL fragment, never in a query string.
