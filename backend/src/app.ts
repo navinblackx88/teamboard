@@ -13,6 +13,7 @@ import { pool } from "./db/index.js";
 import { redis } from "./lib/redis.js";
 import { authenticate } from "./middleware/auth.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
+import { spa } from "./lib/spa.js";
 import { activityRouter } from "./modules/activity/activity.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { commentRouter, taskCommentsRouter } from "./modules/comments/comment.routes.js";
@@ -62,6 +63,8 @@ export const protectedMounts: [string, Router][] = [
 export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  // Single-service deploys: the API also serves the React app (before helmet's API-oriented CSP).
+  if (env.STATIC_DIR) app.use(spa(env.STATIC_DIR));
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(cors({ origin: env.APP_URL, credentials: true }));
   app.use(compression());

@@ -35,7 +35,11 @@ Demo logins (password `password123`): `aisha@acme.dev` (Admin), `marco@acme.dev`
 `priya@acme.dev` (Developer), `sam@acme.dev` (Viewer). The seed includes two completed sprints
 (for velocity), an active sprint mid-way (for the burndown), a planned sprint and a backlog.
 
-## Deploy to Vercel
+## Deploy to Railway (recommended)
+
+One service built from the `Dockerfile` (serves the app and the API on one domain), Railway PostgreSQL and a volume for uploads. No Pusher, Redis or S3 needed. See **[DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md)**.
+
+## Deploy to Vercel (alternative)
 
 The repo deploys to Vercel as one project: the SPA is static and the API runs as a single function under `/api`. On Vercel, real-time moves to Pusher Channels, uploads go straight from the browser to S3/R2, and deadline reminders run on Vercel Cron. See **[DEPLOY-VERCEL.md](DEPLOY-VERCEL.md)** for the services to create, the environment variables (`.env.vercel.example`) and plan notes. Docker / self-hosted deployments keep using Socket.IO and work as before.
 

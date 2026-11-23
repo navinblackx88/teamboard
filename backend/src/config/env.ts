@@ -2,8 +2,10 @@ import "dotenv/config";
 import { z } from "zod";
 
 // On Vercel the app and API share one origin; default the URLs from Vercel's system variables.
+// On Railway, default them from the service's generated public domain.
 const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
-const defaultOrigin = vercelHost ? `https://${vercelHost}` : undefined;
+const publicHost = vercelHost ?? process.env.RAILWAY_PUBLIC_DOMAIN;
+const defaultOrigin = publicHost ? `https://${publicHost}` : undefined;
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -24,6 +26,7 @@ const schema = z.object({
 
   STORAGE_DRIVER: z.enum(["s3", "local"]).default("local"),
   LOCAL_UPLOAD_DIR: z.string().default("./uploads"),
+  STATIC_DIR: z.string().optional(), // built frontend to serve from the API (single-service deploys, e.g. Railway)
   S3_BUCKET: z.string().optional(),
   S3_REGION: z.string().default("us-east-1"),
   S3_ENDPOINT: z.string().optional(), // MinIO / GCS interoperability endpoint
