@@ -53,6 +53,9 @@ if (!parsed.success) {
 }
 export const env = parsed.data;
 
+if (env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+  throw new Error("Set DATABASE_URL in production (Railway: service → Variables → DATABASE_URL=${{Postgres.DATABASE_URL}})");
+}
 if (env.NODE_ENV === "production") {
   const missing = (["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const).filter((k) => env[k].startsWith("dev-"));
   if (missing.length) throw new Error(`Set ${missing.join(" and ")} in production (Railway: service → Variables). Generate one with: openssl rand -base64 48`);
