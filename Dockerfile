@@ -1,6 +1,6 @@
 # Single-service image (Railway, Render, Fly…): the API serves the React app on one port ($PORT).
 # Local multi-container demo uses docker-compose.yml instead.
-FROM node:22-slim AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json backend/
@@ -12,16 +12,15 @@ COPY frontend frontend
 ENV VITE_API_URL=""
 RUN npm run build -w @teamboard/backend && npm run build -w @teamboard/frontend
 
-FROM node:22-slim AS prod-deps
+FROM node:22-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
 RUN npm ci --omit=dev -w @teamboard/backend && mkdir -p backend/node_modules
 
-# Debian (glibc) rather than Alpine: Railway's private DNS (postgres.railway.internal) can fail to resolve on musl.
-FROM node:22-slim
-RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+FROM node:22-alpine
+RUN apk add --no-cache su-exec
 ENV NODE_ENV=production \
     STATIC_DIR=/app/frontend/dist \
     STORAGE_DRIVER=local \

@@ -821,10 +821,59 @@ paths:
       responses:
         "201": { description: Uploaded, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Attachment" } } } } } } }
         "413": { description: File too large }
+  /tasks/{tid}/attachments/uploads:
+    parameters: [{ $ref: "#/components/parameters/tid" }]
+    post:
+      tags: [Files]
+      summary: Start direct-to-storage uploads (presigned PUT URLs)
+      description: >-
+        Enabled with `DIRECT_UPLOADS=true` (S3-compatible storage). Returns one presigned PUT URL per file; the browser uploads
+        each file there with the given headers, then calls `/uploads/complete`. Used on Vercel, whose functions reject request
+        bodies over 4.5 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  maxItems: 10
+                  items: { type: object, required: [filename, size], properties: { filename: { type: string }, mimeType: { type: string }, size: { type: integer, description: Bytes } } }
+      responses:
+        "201":
+          description: Upload URLs (valid 10 minutes)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { type: object, properties: { key: { type: string }, filename: { type: string }, url: { type: string, format: uri }, headers: { type: object, additionalProperties: { type: string } } } } }
+                  expiresInSeconds: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /tasks/{tid}/attachments/uploads/complete:
+    parameters: [{ $ref: "#/components/parameters/tid" }]
+    post:
+      tags: [Files]
+      summary: Record directly uploaded files as attachments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files: { type: array, maxItems: 10, items: { type: object, required: [key, filename], properties: { key: { type: string }, filename: { type: string }, mimeType: { type: string } } } }
+      responses:
+        "201": { description: Recorded, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Attachment" } } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /config:
     get:
       tags: [Platform]
-      summary: Runtime config for clients (upload size limit)
+      summary: Runtime config for clients (real-time transport, upload mode and limit)
       security: []
       responses:
         "200":
@@ -834,7 +883,23 @@ paths:
               schema:
                 type: object
                 properties:
-                  uploads: { type: object, properties: { maxMb: { type: number } } }
+                  realtime: { type: object, properties: { driver: { type: string, enum: [socketio, pusher] }, pusher: { type: object, description: "Public pusher-js options (key, cluster, host)" } } }
+                  uploads: { type: object, properties: { direct: { type: boolean }, maxMb: { type: number } } }
+  /realtime/auth:
+    post:
+      tags: [Platform]
+      summary: Authorize a Pusher channel subscription
+      description: >-
+        Called by pusher-js when `REALTIME_DRIVER=pusher`. Channels are `private-user-{id}` (yourself only),
+        `private-workspace-{id}` (members) and `presence-project-{id}` (anyone who can read the project).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, required: [socket_id, channel_name], properties: { socket_id: { type: string }, channel_name: { type: string } } }
+      responses:
+        "200": { description: Signed auth for pusher-js, content: { application/json: { schema: { type: object, properties: { auth: { type: string }, channel_data: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /attachments/{aid}/url:
     parameters: [{ $ref: "#/components/parameters/aid" }]
     get:

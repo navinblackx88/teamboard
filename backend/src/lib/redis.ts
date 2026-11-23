@@ -1,5 +1,5 @@
 import { Redis } from "ioredis";
-import { env } from "../config/env.js";
+import { env, serverless } from "../config/env.js";
 import { logger } from "./logger.js";
 
 /** Shared Redis connection, or null when REDIS_URL is not configured (single-node dev). */
@@ -34,6 +34,9 @@ export const cache = {
   },
   /** get-or-compute */
   async wrap<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
+    // Serverless instances don't share memory, so a process-local cache would serve stale data after
+    // another instance invalidates it. Without Redis there, compute every time.
+    if (!redis && serverless) return fn();
     const hit = await this.get<T>(key);
     if (hit !== undefined) return hit;
     const v = await fn();

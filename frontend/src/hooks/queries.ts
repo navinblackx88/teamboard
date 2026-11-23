@@ -256,8 +256,18 @@ export function useAttachmentMutations(tid: string, pid: string) {
         const cfg = await qc.fetchQuery({ queryKey: ["config"], queryFn: fetchConfig, staleTime: Infinity });
         const tooBig = files.find((f) => f.size > cfg.uploads.maxMb * 1024 * 1024);
         if (tooBig) throw new Error(`${tooBig.name} is larger than ${cfg.uploads.maxMb} MB`);
-        const form = new FormData(); files.forEach((f) => form.append("files", f));
-        return api(`/tasks/${tid}/attachments`, { form });
+        if (!cfg.uploads.direct) {
+          const form = new FormData(); files.forEach((f) => form.append("files", f));
+          return api(`/tasks/${tid}/attachments`, { form });
+        }
+        // Direct-to-storage: get presigned URLs, PUT each file to the bucket, then record them.
+        const meta = files.map((f) => ({ filename: f.name, size: f.size, mimeType: f.type || "application/octet-stream" }));
+        const { items } = await api<{ items: { key: string; filename: string; url: string; headers: Record<string, string> }[] }>(`/tasks/${tid}/attachments/uploads`, { body: { files: meta } });
+        await Promise.all(items.map(async (it, i) => {
+          const r = await fetch(it.url, { method: "PUT", headers: it.headers, body: files[i] });
+          if (!r.ok) throw new Error(`Uploading ${it.filename} failed (${r.status})`);
+        }));
+        return api(`/tasks/${tid}/attachments/uploads/complete`, { body: { files: items.map((it, i) => ({ key: it.key, filename: it.filename, mimeType: meta[i].mimeType })) } });
       },
       onSuccess: refresh, onError: onError("Upload failed"),
     }),

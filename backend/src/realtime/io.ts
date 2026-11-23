@@ -6,6 +6,7 @@ import { assertProject, assertWorkspace } from "../lib/access.js";
 import { logger } from "../lib/logger.js";
 import { redis } from "../lib/redis.js";
 import { verifyAccessToken } from "../lib/tokens.js";
+import { channelFor, trigger } from "./pusher.js";
 
 /**
  * Rooms:
@@ -90,9 +91,10 @@ async function broadcastPresence(projectId: string) {
 
 type Payload = Record<string, unknown> & { actorId?: string };
 type Scope = "project" | "workspace" | "user";
-/** Emits to a Socket.IO room (fanned out across instances by the Redis adapter when REDIS_URL is set). */
+/** Sends through whichever driver is configured: Socket.IO rooms (self-hosted) or Pusher channels (Vercel). */
 function send(scope: Scope, id: string, event: RealtimeEvent, payload: Payload) {
-  io?.to(`${scope}:${id}`).emit(event, payload);
+  if (env.REALTIME_DRIVER === "pusher") trigger(channelFor[scope](id), event, payload);
+  else io?.to(`${scope}:${id}`).emit(event, payload);
 }
 export const broadcast = {
   project: (id: string, event: RealtimeEvent, payload: Payload) => send("project", id, event, payload),

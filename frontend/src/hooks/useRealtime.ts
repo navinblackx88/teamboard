@@ -68,7 +68,7 @@ export function useProjectRealtime(projectId: string | undefined) {
 
     const onTask = (p: WithActor & { task?: Task; taskId?: string }) => {
       if (mine(p)) return;
-      // Events without the full task (just an id) trigger a refetch instead.
+      // Large payloads may arrive trimmed to ids (Pusher's 10 KB limit); then we just refetch.
       if (!p.task) { invalidateTaskViews(qc, projectId, p.taskId); return; }
       if (!p.task.parentId) patchBoards((b) => placeInBoard(b, p.task!));
       invalidateTaskViews(qc, projectId, p.task.id);

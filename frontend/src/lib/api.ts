@@ -28,7 +28,7 @@ export function refreshTokens(): Promise<boolean> {
 type Opts = { method?: string; body?: unknown; query?: Record<string, string | number | boolean | undefined | null>; form?: FormData; signal?: AbortSignal };
 
 export async function api<T = unknown>(path: string, opts: Opts = {}, retry = true): Promise<T> {
-  const url = new URL(BASE + path, window.location.origin); // BASE is relative when the API shares the app's origin (Railway, Docker)
+  const url = new URL(BASE + path, window.location.origin); // BASE is relative when the API shares the app's origin (Vercel)
   for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   const token = useAuth.getState().accessToken;
   const res = await fetch(url, {

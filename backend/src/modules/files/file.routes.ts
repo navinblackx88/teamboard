@@ -3,14 +3,15 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import { desc, eq } from "drizzle-orm";
-import { env } from "../../config/env.js";
+import { z } from "zod";
+import { apiUploadLimitMb, env } from "../../config/env.js";
 import { db } from "../../db/index.js";
 import { attachments, users } from "../../db/schema.js";
 import { assertTask } from "../../lib/access.js";
 import { badRequest, forbidden, notFound, unauthorized } from "../../lib/errors.js";
 import { can } from "../../lib/rbac.js";
 import { storage } from "../../lib/storage.js";
-import { uuidParam } from "../../lib/validate.js";
+import { body, uuidParam } from "../../lib/validate.js";
 import { me } from "../../middleware/auth.js";
 import { broadcast } from "../../realtime/io.js";
 import { logActivity } from "../activity/activity.service.js";
@@ -23,7 +24,7 @@ export const publicFileRouter = Router();
 const BLOCKED = /\.(exe|bat|cmd|com|scr|msi|ps1|vbs|jar|sh)$/i;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 10 },
+  limits: { fileSize: apiUploadLimitMb * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => (BLOCKED.test(file.originalname) ? cb(badRequest(`File type not allowed: ${file.originalname}`)) : cb(null, true)),
 });
 
@@ -76,6 +77,47 @@ taskAttachmentsRouter.post("/", upload.array("files", 10), async (req, res) => {
     const key = `${keyPrefix(ctx)}${crypto.randomUUID()}-${safeName(filename)}`;
     await storage.put(key, f.buffer, f.mimetype);
     stored.push({ key, filename, mimeType: f.mimetype, size: f.size });
+  }
+  res.status(201).json({ items: await recordAttachments(actor.id, ctx, stored) });
+});
+
+// ─── Direct-to-storage uploads (DIRECT_UPLOADS=true) ────────────────────────
+// 1. POST /uploads with file metadata → presigned PUT URLs.  2. Browser PUTs each file to storage.
+// 3. POST /uploads/complete with the keys → attachments are recorded. Used on Vercel, whose functions
+//    reject request bodies over 4.5 MB.
+const fileMeta = z.object({ filename: z.string().min(1).max(255), mimeType: z.string().max(200).default("application/octet-stream"), size: z.number().int().positive() });
+const directOnly = () => { if (!env.DIRECT_UPLOADS || !storage.uploadUrl) throw badRequest("Direct uploads are not enabled; POST multipart to /attachments instead"); };
+
+taskAttachmentsRouter.post("/uploads", async (req, res) => {
+  directOnly();
+  const ctx = await assertTask(me(req), uuidParam(req, "tid"), "file:upload");
+  const { files } = body(req, z.object({ files: z.array(fileMeta).min(1).max(10) }));
+  const max = env.MAX_UPLOAD_MB * 1024 * 1024;
+  for (const f of files) {
+    if (BLOCKED.test(f.filename)) throw badRequest(`File type not allowed: ${f.filename}`);
+    if (f.size > max) throw badRequest(`${f.filename} is larger than ${env.MAX_UPLOAD_MB} MB`);
+  }
+  const items = await Promise.all(files.map(async (f) => {
+    const key = `${keyPrefix(ctx)}${crypto.randomUUID()}-${safeName(f.filename)}`;
+    return { key, filename: f.filename, url: await storage.uploadUrl!(key, f.mimeType, f.size), headers: { "Content-Type": f.mimeType } };
+  }));
+  res.status(201).json({ items, expiresInSeconds: 600 });
+});
+
+taskAttachmentsRouter.post("/uploads/complete", async (req, res) => {
+  directOnly();
+  const actor = me(req);
+  const ctx = await assertTask(actor, uuidParam(req, "tid"), "file:upload");
+  const { files } = body(req, z.object({ files: z.array(z.object({ key: z.string().max(400), filename: z.string().min(1).max(255), mimeType: z.string().max(200).default("application/octet-stream") })).min(1).max(10) }));
+  const stored = [];
+  for (const f of files) {
+    // Keys are only accepted for this task's folder, and the object must really be in storage.
+    if (!f.key.startsWith(keyPrefix(ctx)) || f.key.includes("..")) throw badRequest("Upload key does not belong to this task");
+    const [dupe] = await db.select({ id: attachments.id }).from(attachments).where(eq(attachments.storageKey, f.key));
+    if (dupe) throw badRequest(`${f.filename} is already attached`);
+    const size = await storage.size!(f.key);
+    if (size === null) throw badRequest(`${f.filename} hasn't finished uploading`);
+    stored.push({ key: f.key, filename: f.filename, mimeType: f.mimeType, size });
   }
   res.status(201).json({ items: await recordAttachments(actor.id, ctx, stored) });
 });

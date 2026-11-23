@@ -24,7 +24,10 @@ import { labelRouter, projectRouter, workspaceProjectsRouter } from "./modules/p
 import { projectSprintsRouter, sprintRouter } from "./modules/sprints/sprint.routes.js";
 import { myTasksRouter, projectTasksRouter, taskRouter } from "./modules/tasks/task.routes.js";
 import { invitationAcceptRouter, invitationPublicRouter, workspaceRouter } from "./modules/workspaces/workspace.routes.js";
-import { configRouter } from "./realtime/routes.js";
+import { cronHandler } from "./jobs/cron.js";
+import { checkDeadlines } from "./jobs/deadlines.js";
+import { lazyCron } from "./lib/periodic.js";
+import { configRouter, realtimeRouter } from "./realtime/routes.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const openapiPath = path.resolve(here, "../openapi.yaml");
@@ -54,6 +57,7 @@ export const protectedMounts: [string, Router][] = [
   ["/attachments", attachmentRouter],
   ["/notifications", notificationRouter],
   ["/me", myTasksRouter],
+  ["/realtime", realtimeRouter],
 ];
 
 export function createApp() {
@@ -78,6 +82,10 @@ export function createApp() {
   const spec = YAML.parse(fs.readFileSync(openapiPath, "utf8"));
   app.get("/api/openapi.json", (_req, res) => res.json(spec));
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(spec, { customSiteTitle: "TeamBoard API" }));
+
+  // Scheduled jobs: Vercel Cron calls these; on serverless hosts traffic also nudges them (see lib/periodic.ts).
+  app.get("/api/cron/:job", cronHandler);
+  app.use(lazyCron([{ name: "deadlines", everyMs: env.DEADLINE_CHECK_CRON_MINUTES * 60_000, run: () => checkDeadlines() }]));
 
   const v1 = Router();
   for (const [mount, router] of publicMounts) v1.use(mount, router);

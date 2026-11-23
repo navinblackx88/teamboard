@@ -48,7 +48,7 @@ Browser ──▶ :8080  web (nginx)
 - **No Redis.** With one API instance, the cache and job lock fall back to process memory. Redis only matters once you run several API instances (`REDIS_URL` turns it on; Socket.IO then uses its Redis adapter).
 - **No object storage.** Attachments are written to a Docker volume. `STORAGE_DRIVER=s3` switches to S3 or R2 later with no code change.
 - **Mail is local.** Notification emails go to Mailpit, which is part of the demo rather than a dependency.
-- **Optional integrations stay off.** Google sign-in only appears when `GOOGLE_CLIENT_ID` is set.
+- **Optional integrations stay off.** Google sign-in only appears when `GOOGLE_CLIENT_ID` is set. The Vercel code paths (Pusher, presigned uploads, cron routes) are inactive unless explicitly configured.
 - **Zero setup.** Migrations run on start, and `SEED_DEMO_DATA=true` (the default) creates the Acme demo workspace on the first start only. The seed skips itself once users exist.
 - **Ports.** Only 8080 (app) and 8025 (inbox) are published. Postgres stays inside the Docker network, so it can't clash with a database already on your machine.
 
@@ -59,7 +59,7 @@ Browser ──▶ :8080  web (nginx)
 | Several API instances | Add Redis (`REDIS_URL`), scale `api`, put nginx or a load balancer in front |
 | Durable shared files | `STORAGE_DRIVER=s3` with S3, R2, or a self-hosted S3-compatible store |
 | Real email | Point `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` at your provider |
-| Cloud hosting | Railway: see `DEPLOY-RAILWAY.md` |
+| Serverless hosting | See `DEPLOY-VERCEL.md` |
 
 ## A 10-minute demo script
 

@@ -1,8 +1,10 @@
 import "dotenv/config";
 import { z } from "zod";
 
-// On Railway the app and API share one origin; default the URLs from the service's generated public domain.
-const publicHost = process.env.RAILWAY_PUBLIC_DOMAIN;
+// On Vercel the app and API share one origin; default the URLs from Vercel's system variables.
+// On Railway, default them from the service's generated public domain.
+const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+const publicHost = vercelHost ?? process.env.RAILWAY_PUBLIC_DOMAIN;
 const defaultOrigin = publicHost ? `https://${publicHost}` : undefined;
 
 const schema = z.object({
@@ -24,11 +26,11 @@ const schema = z.object({
 
   STORAGE_DRIVER: z.enum(["s3", "local"]).default("local"),
   LOCAL_UPLOAD_DIR: z.string().default("./uploads"),
-  STATIC_DIR: z.string().optional(), // built frontend to serve from the API (the Railway image sets this)
+  STATIC_DIR: z.string().optional(), // built frontend to serve from the API (single-service deploys, e.g. Railway)
   S3_BUCKET: z.string().optional(),
   S3_REGION: z.string().default("us-east-1"),
   S3_ENDPOINT: z.string().optional(), // MinIO / GCS interoperability endpoint
-  S3_PUBLIC_ENDPOINT: z.string().optional(), // endpoint browsers use for presigned download URLs, if different
+  S3_PUBLIC_ENDPOINT: z.string().optional(), // endpoint browsers use for presigned URLs, if different (e.g. Docker)
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.enum(["true", "false", "1", "0"]).default("false").transform((v) => v === "true" || v === "1"),
@@ -40,7 +42,18 @@ const schema = z.object({
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().default("TeamBoard <no-reply@teamboard.local>"),
 
-  DB_POOL_MAX: z.coerce.number().default(20),
+  // Vercel / serverless
+  REALTIME_DRIVER: z.enum(["socketio", "pusher"]).default("socketio"), // pusher = Pusher Channels (or any Pusher-protocol server, e.g. soketi)
+  PUSHER_APP_ID: z.string().optional(),
+  PUSHER_KEY: z.string().optional(),
+  PUSHER_SECRET: z.string().optional(),
+  PUSHER_CLUSTER: z.string().default("mt1"),
+  PUSHER_HOST: z.string().optional(), // self-hosted Pusher-compatible server; leave unset for Pusher Channels
+  PUSHER_PORT: z.coerce.number().optional(),
+  PUSHER_USE_TLS: z.enum(["true", "false", "1", "0"]).default("true").transform((v) => v === "true" || v === "1"),
+  DIRECT_UPLOADS: z.enum(["true", "false", "1", "0"]).default("false").transform((v) => v === "true" || v === "1"), // browser → S3 presigned PUT (needed past Vercel's 4.5 MB body limit)
+  CRON_SECRET: z.string().optional(), // Vercel Cron sends "Authorization: Bearer $CRON_SECRET"
+  DB_POOL_MAX: z.coerce.number().optional(),
 
   DEADLINE_CHECK_CRON_MINUTES: z.coerce.number().default(15),
   DEADLINE_WINDOW_HOURS: z.coerce.number().default(24),
@@ -53,11 +66,21 @@ if (!parsed.success) {
 }
 export const env = parsed.data;
 
-if (env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
-  throw new Error("Set DATABASE_URL in production (Railway: service → Variables → DATABASE_URL=${{Postgres.DATABASE_URL}})");
-}
 if (env.NODE_ENV === "production") {
   const missing = (["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET"] as const).filter((k) => env[k].startsWith("dev-"));
-  if (missing.length) throw new Error(`Set ${missing.join(" and ")} in production (Railway: service → Variables). Generate one with: openssl rand -base64 48`);
+  if (missing.length) throw new Error(`Set ${missing.join(" and ")} in production (Vercel: Project → Settings → Environment Variables, then redeploy). Generate one with: openssl rand -base64 48`);
 }
+/** True inside a Vercel Function (or any serverless host that sets SERVERLESS=1): no long-lived process. */
+export const serverless = process.env.VERCEL === "1" || process.env.SERVERLESS === "1";
+
+if (env.REALTIME_DRIVER === "pusher" && !(env.PUSHER_APP_ID && env.PUSHER_KEY && env.PUSHER_SECRET)) {
+  throw new Error("REALTIME_DRIVER=pusher needs PUSHER_APP_ID, PUSHER_KEY and PUSHER_SECRET");
+}
+if (env.DIRECT_UPLOADS && env.STORAGE_DRIVER !== "s3") throw new Error("DIRECT_UPLOADS needs STORAGE_DRIVER=s3");
+if (serverless && env.STORAGE_DRIVER === "local") {
+  throw new Error("Local file storage doesn't persist on serverless hosts: set STORAGE_DRIVER=s3 (AWS S3, Cloudflare R2, GCS…)");
+}
+/** Vercel rejects request bodies over 4.5 MB, so uploads through the API are capped below that. */
+export const apiUploadLimitMb = serverless ? Math.min(env.MAX_UPLOAD_MB, 4) : env.MAX_UPLOAD_MB;
+
 export const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);

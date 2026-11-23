@@ -1,6 +1,6 @@
 # Deploying TeamBoard to Railway
 
-TeamBoard runs on Railway as **one service** plus Railway's managed **PostgreSQL**. The container serves the React app and the API on the same domain, so there's no CORS setup. Socket.IO (WebSockets), background jobs and file storage all work exactly as in the local Docker demo, because Railway keeps the process running. Redis and an S3 bucket are optional, only needed to run more than one instance.
+TeamBoard runs on Railway as **one service** plus Railway's managed **PostgreSQL**. The container serves the React app and the API on the same domain, so there's no CORS setup. Socket.IO (WebSockets), background jobs and file storage all work exactly as in the local Docker demo, because Railway keeps the process running. You don't need Pusher, Redis or an S3 bucket.
 
 ```
 Browser ── https://<app>.up.railway.app ──▶  teamboard service  (Dockerfile, one process, $PORT)
@@ -16,7 +16,7 @@ The repo already contains everything Railway reads:
 | File | Purpose |
 |---|---|
 | `railway.json` | Build with `Dockerfile`, health check on `/health`, restart on failure |
-| `Dockerfile` | Builds API + frontend into one Debian-slim image; runs as the unprivileged `node` user |
+| `Dockerfile` | Builds API + frontend into one image; runs as the unprivileged `node` user |
 | `railway/start.sh` | Makes the volume writable, seeds demo data once (optional), starts the API (migrations run on start) |
 
 ## 1. Create the project
@@ -36,7 +36,7 @@ Open the teamboard service → **Variables** and add:
 | `JWT_REFRESH_SECRET` | `openssl rand -base64 48` (a different value) | Signs refresh tokens |
 | `SEED_DEMO_DATA` | `true` | Optional: creates demo users and data on first start (skipped once users exist). Omit for an empty install |
 
-You don't need to set storage variables: the image defaults to `STORAGE_DRIVER=local` with `LOCAL_UPLOAD_DIR=/data/uploads` (the volume from step 3). Railway provides `PORT` and the app listens on it.
+Don't set `VERCEL`, `SERVERLESS`, `REALTIME_DRIVER`, `STORAGE_DRIVER`, `DIRECT_UPLOADS` or `PUSHER_*`. Those are for Vercel, and the image already sets the right storage defaults (`STORAGE_DRIVER=local`, `LOCAL_UPLOAD_DIR=/data/uploads`). Railway provides `PORT` and the app listens on it.
 
 ## 3. Volume (persistent task attachments)
 
@@ -81,7 +81,6 @@ The volume ties the service to **one replica**, which is plenty for an MVP. To r
 |---|---|
 | `Set JWT_… in production` | Add the JWT variables from step 2 |
 | `ECONNREFUSED` / `getaddrinfo` for the database | `DATABASE_URL` missing or not `${{Postgres.DATABASE_URL}}` |
-| `getaddrinfo ENOTFOUND postgres.railway.internal` | The image is Debian-based to avoid Railway's Alpine DNS issue, and the app retries the database for about 60 s at startup. If it persists, check that Postgres is in the same project and environment, and that `DATABASE_URL` is a reference to it |
 | Health check times out on first deploy | Check the logs. Migrations and the seed run before the server listens; the timeout is 180 s |
 | `EACCES` writing uploads | Volume not mounted at `/data`, or `LOCAL_UPLOAD_DIR` overridden |
 | Login works but links in emails point to the wrong host | Custom domain: set `APP_URL` / `API_URL` |

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "../config/env.js";
 
@@ -15,13 +15,18 @@ export interface Storage {
   downloadUrl(key: string, filename: string): Promise<string | null>;
   read(key: string): Promise<Buffer>;
   remove(key: string): Promise<void>;
+  /** Presigned PUT the browser uploads to directly (S3 only; bypasses serverless body-size limits). */
+  uploadUrl?(key: string, contentType: string, size: number): Promise<string>;
+  /** Size of a stored object, or null if it doesn't exist. */
+  size?(key: string): Promise<number | null>;
 }
 
 const s3Client = (endpoint?: string) => new S3Client({
   region: env.S3_REGION,
   endpoint,
   forcePathStyle: env.S3_FORCE_PATH_STYLE,
-  // Only add checksums when an operation requires them (Cloudflare R2 and GCS don't support the SDK's defaults).
+  // Only add checksums when an operation requires them. The SDK's default would bake a CRC32 of an empty
+  // body into presigned PUT URLs, which S3 then rejects for the browser's real upload (and R2/GCS don't support it).
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
   credentials: env.S3_ACCESS_KEY_ID ? { accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? "" } : undefined,
@@ -47,6 +52,19 @@ class S3Storage implements Storage {
   }
   async remove(key: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+  uploadUrl(key: string, contentType: string, size: number) {
+    // Content-Type and Content-Length are signed, so the upload must match what the API approved.
+    return getSignedUrl(this.signer, new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType, ContentLength: size }), { expiresIn: 600 });
+  }
+  async size(key: string) {
+    try {
+      const r = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return r.ContentLength ?? 0;
+    } catch (e) {
+      if ((e as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null;
+      throw e;
+    }
   }
 }
 
